@@ -7,27 +7,28 @@ import java.sql.SQLException;
 public class MainFrame extends JFrame {
     private JTextArea logArea;
     private JButton btnTestConn, btnRaw, btnPooled, btnStop;
+    private SimulationEngine engine;
 
     public MainFrame() {
-        setTitle("Simulador de Conexiones - ADELANTO");
-        setSize(600, 450);
+        setTitle("Simulador de Conexiones a BD - Adelanto");
+        setSize(700, 500);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLayout(new BorderLayout());
 
-        // --- Panel Superior (Controles) ---
+        engine = new SimulationEngine(this);
+
         JPanel panelButtons = new JPanel();
         panelButtons.setLayout(new FlowLayout());
 
-        btnTestConn = new JButton("Verificar Conexión DB");
-        btnTestConn.setBackground(new Color(200, 255, 200)); // Color verde suave
+        btnTestConn = new JButton("Verificar DB");
+        btnTestConn.setBackground(new Color(200, 255, 200));
 
         btnRaw = new JButton("Simulación RAW");
-        btnRaw.setEnabled(false); // Deshabilitado para el adelanto
 
         btnPooled = new JButton("Simulación POOLED");
-        btnPooled.setEnabled(false); // Deshabilitado para el adelanto
+        btnPooled.setEnabled(false);
 
-        btnStop = new JButton("Detener");
+        btnStop = new JButton("Freno de Emergencia");
         btnStop.setBackground(Color.RED);
         btnStop.setForeground(Color.WHITE);
         btnStop.setEnabled(false);
@@ -36,52 +37,59 @@ public class MainFrame extends JFrame {
         panelButtons.add(btnRaw);
         panelButtons.add(btnPooled);
         panelButtons.add(btnStop);
-
-        // --- Área Central (Logs) ---
         logArea = new JTextArea();
         logArea.setEditable(false);
-        logArea.setFont(new Font("Monospaced", Font.PLAIN, 12));
+        logArea.setFont(new Font("Monospaced", Font.PLAIN, 13));
         JScrollPane scroll = new JScrollPane(logArea);
         scroll.setBorder(BorderFactory.createTitledBorder("Log de Ejecución en Tiempo Real"));
 
         add(panelButtons, BorderLayout.NORTH);
         add(scroll, BorderLayout.CENTER);
 
-        // --- Eventos ---
         btnTestConn.addActionListener(e -> testSingleConnection());
 
-        LogManager.log("Interfaz iniciada. Esperando comandos...");
-        appendToGui("Sistema listo. Cargado desde: " + DatabaseConfig.getUrl());
+        btnRaw.addActionListener(e -> {
+            enableButtons(false);
+            engine.runRawSimulation();
+        });
+
+        btnStop.addActionListener(e -> engine.stopSimulation());
+
+        appendToGui("Sistema inicializado. Parámetros cargados desde config.properties");
     }
 
-    // Método simple para demostrar que JDBC funciona
     private void testSingleConnection() {
         new Thread(() -> {
-            appendToGui("Intentando conectar a PostgreSQL...");
+            appendToGui("Probando conexión a: " + DatabaseConfig.getUrl() + " ...");
             try (Connection conn = DriverManager.getConnection(
                     DatabaseConfig.getUrl(),
                     DatabaseConfig.getUser(),
                     DatabaseConfig.getPass())) {
 
                 if (conn != null) {
-                    appendToGui("¡ÉXITO! Conexión establecida.");
-                    LogManager.log("Prueba de conexión exitosa.");
+                    appendToGui("¡ÉXITO! Conexión establecida correctamente.");
                     JOptionPane.showMessageDialog(this, "Conexión Exitosa a la DB");
                 }
             } catch (SQLException ex) {
-                appendToGui("ERROR: " + ex.getMessage());
-                LogManager.log("Fallo en prueba de conexión: " + ex.getMessage());
-                JOptionPane.showMessageDialog(this, "Error de conexión", "Error", JOptionPane.ERROR_MESSAGE);
+                appendToGui("ERROR de conexión: " + ex.getMessage());
             }
         }).start();
     }
 
-    private void appendToGui(String text) {
-        SwingUtilities.invokeLater(() -> logArea.append(text + "\n"));
+    public void enableButtons(boolean enable) {
+        btnTestConn.setEnabled(enable);
+        btnRaw.setEnabled(enable);
+        btnStop.setEnabled(!enable);
+    }
+
+    public void appendToGui(String text) {
+        SwingUtilities.invokeLater(() -> {
+            logArea.append(text + "\n");
+            logArea.setCaretPosition(logArea.getDocument().getLength());
+        });
     }
 
     public static void main(String[] args) {
-        // Asegurarse de cargar la UI en el hilo de eventos
         SwingUtilities.invokeLater(() -> new MainFrame().setVisible(true));
     }
 }
