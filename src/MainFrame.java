@@ -26,7 +26,11 @@ public class MainFrame extends JFrame {
         btnRaw = new JButton("Simulación RAW");
 
         btnPooled = new JButton("Simulación POOLED");
-        btnPooled.setEnabled(false);
+        btnPooled.setEnabled(true);
+        btnPooled.addActionListener(e -> {
+            enableButtons(false);
+            engine.runPooledSimulation();
+        });
 
         btnStop = new JButton("Freno de Emergencia");
         btnStop.setBackground(Color.RED);

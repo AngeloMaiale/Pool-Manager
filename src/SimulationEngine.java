@@ -1,6 +1,7 @@
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.Statement;
+import java.sql.SQLException;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -16,6 +17,80 @@ public class SimulationEngine {
         this.stopRequested = true;
         gui.appendToGui("¡FRENO ACTIVADO! Deteniendo hilos...");
         LogManager.log("SIMULACIÓN ABORTADA POR EL USUARIO.");
+    }
+
+    public void runPooledSimulation() {
+        this.stopRequested = false;
+        int samples = DatabaseConfig.getSamples();
+        int poolSize = DatabaseConfig.getPoolSize();
+        long startTime = System.currentTimeMillis();
+
+        gui.appendToGui("Iniciando Simulación POOLED (Muestras: " + samples + ", Pool: " + poolSize + ")...");
+        LogManager.log("--- INICIO SIMULACIÓN POOLED ---");
+
+        try {
+            SimpleConnectionPool pool = new SimpleConnectionPool(poolSize);
+            System.out.println("[DEBUG] Pool inicializado correctamente.");
+            CountDownLatch startSignal = new CountDownLatch(1);
+            CountDownLatch doneSignal = new CountDownLatch(samples);
+            System.out.println("[DEBUG] Creando " + samples + " hilos...");
+            for (int i = 1; i <= samples; i++) {
+                final int id = i;
+                new Thread(() -> {
+                    try {
+                        startSignal.await();
+
+                        if (stopRequested) {
+                            doneSignal.countDown();
+                            return;
+                        }
+
+                        Connection conn = null;
+                        try {
+                            conn = pool.getConnection();
+                            System.out.println("[DEBUG] Hilo " + id + " obtuvo conexión.");
+
+                            Statement stmt = conn.createStatement();
+                            stmt.execute(DatabaseConfig.getQuery());
+
+                            LogManager.log("ID: " + id + " | Éxito | POOLED");
+                        } catch (Exception e) {
+                            System.err.println("[DEBUG] Error en hilo " + id + ": " + e.getMessage());
+                            LogManager.log("ID: " + id + " | Fallo: " + e.getMessage() + " | POOLED");
+                        } finally {
+                            if (conn != null) {
+                                pool.releaseConnection(conn);
+                                System.out.println("[DEBUG] Hilo " + id + " devolvió conexión.");
+                            }
+                            doneSignal.countDown();
+                        }
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        doneSignal.countDown();
+                    }
+                }).start();
+            }
+            System.out.println("[DEBUG] ¡Dando señal de inicio a todos los hilos!");
+            startSignal.countDown();
+            new Thread(() -> {
+                try {
+                    doneSignal.await();
+                    long endTime = System.currentTimeMillis();
+                    long totalTime = endTime - startTime;
+                    System.out.println("[DEBUG] Todos los hilos terminaron.");
+                    gui.appendToGui("Simulación POOLED terminada en: " + totalTime + " ms.");
+                    gui.enableButtons(true);
+                    pool.shutdown();
+                } catch (InterruptedException e) {
+                    gui.enableButtons(true);
+                }
+            }).start();
+
+        } catch (SQLException e) {
+            System.err.println("[DEBUG] Error al crear el Pool: " + e.getMessage());
+            gui.appendToGui("Error: No se pudo conectar a la base de datos.");
+            gui.enableButtons(true);
+        }
     }
 
     public void runRawSimulation() {
@@ -39,7 +114,7 @@ public class SimulationEngine {
             final int id = i;
             new Thread(() -> {
                 try {
-                    startSignal.await(); // Esperar la señal de salida
+                    startSignal.await();
                     if (stopRequested) return;
 
                     ejecutarMuestraRaw(id, maxRetries, successCount, failCount, totalRetries);
