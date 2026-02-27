@@ -26,17 +26,17 @@ public class SimulationEngine {
         long startTime = System.currentTimeMillis();
 
         gui.appendToGui("Iniciando Simulación POOLED (Muestras: " + samples + ", Pool: " + poolSize + ")...");
-        LogManager.log("--- INICIO SIMULACIÓN POOLED ---");
+        LogManager.logHeader("INICIO SIMULACIÓN POOLED");
 
         try {
             SimpleConnectionPool pool = new SimpleConnectionPool(poolSize);
-            System.out.println("[DEBUG] Pool inicializado correctamente.");
             CountDownLatch startSignal = new CountDownLatch(1);
             CountDownLatch doneSignal = new CountDownLatch(samples);
-            System.out.println("[DEBUG] Creando " + samples + " hilos...");
+
             for (int i = 1; i <= samples; i++) {
                 final int id = i;
                 new Thread(() -> {
+                    long inicioMuestra = System.currentTimeMillis();
                     try {
                         startSignal.await();
 
@@ -48,20 +48,18 @@ public class SimulationEngine {
                         Connection conn = null;
                         try {
                             conn = pool.getConnection();
-                            System.out.println("[DEBUG] Hilo " + id + " obtuvo conexión.");
 
                             Statement stmt = conn.createStatement();
                             stmt.execute(DatabaseConfig.getQuery());
 
-                            LogManager.log("ID: " + id + " | Éxito | POOLED");
+                            long tiempoRespuesta = System.currentTimeMillis() - inicioMuestra;
+                            LogManager.log(id, "POOLED", "EXITO", tiempoRespuesta);
+
                         } catch (Exception e) {
-                            System.err.println("[DEBUG] Error en hilo " + id + ": " + e.getMessage());
-                            LogManager.log("ID: " + id + " | Fallo: " + e.getMessage() + " | POOLED");
+                            long tiempoFallo = System.currentTimeMillis() - inicioMuestra;
+                            LogManager.log(id, "POOLED", "FALLO", tiempoFallo);
                         } finally {
-                            if (conn != null) {
-                                pool.releaseConnection(conn);
-                                System.out.println("[DEBUG] Hilo " + id + " devolvió conexión.");
-                            }
+                            if (conn != null) pool.releaseConnection(conn);
                             doneSignal.countDown();
                         }
                     } catch (InterruptedException e) {
@@ -70,16 +68,21 @@ public class SimulationEngine {
                     }
                 }).start();
             }
-            System.out.println("[DEBUG] ¡Dando señal de inicio a todos los hilos!");
+
             startSignal.countDown();
+
             new Thread(() -> {
                 try {
                     doneSignal.await();
-                    long endTime = System.currentTimeMillis();
-                    long totalTime = endTime - startTime;
-                    System.out.println("[DEBUG] Todos los hilos terminaron.");
-                    gui.appendToGui("Simulación POOLED terminada en: " + totalTime + " ms.");
+                    long totalTime = System.currentTimeMillis() - startTime;
+
+                    double promedio = (double) totalTime / samples;
+
+                    gui.appendToGui("\n--- RESULTADOS POOLED ---");
+                    gui.appendToGui("Tiempo Total: " + totalTime + " ms");
+                    gui.appendToGui("Promedio/Muestra: " + String.format("%.2f", promedio) + " ms");
                     gui.enableButtons(true);
+
                     pool.shutdown();
                 } catch (InterruptedException e) {
                     gui.enableButtons(true);
@@ -87,41 +90,53 @@ public class SimulationEngine {
             }).start();
 
         } catch (SQLException e) {
-            System.err.println("[DEBUG] Error al crear el Pool: " + e.getMessage());
-            gui.appendToGui("Error: No se pudo conectar a la base de datos.");
+            gui.appendToGui("Error al conectar: " + e.getMessage());
             gui.enableButtons(true);
         }
     }
 
     public void runRawSimulation() {
-        stopRequested = false;
+        this.stopRequested = false;
         int samples = DatabaseConfig.getSamples();
-        int maxRetries = DatabaseConfig.getRetries();
+        long startTime = System.currentTimeMillis();
 
-        gui.appendToGui("Iniciando Simulación RAW con " + samples + " hilos concurrentes...");
-        LogManager.log("--- INICIO SIMULACIÓN RAW ---");
+        gui.appendToGui("Iniciando Simulación RAW (Muestras: " + samples + ")...");
+        LogManager.logHeader("INICIO SIMULACIÓN RAW");
 
         CountDownLatch startSignal = new CountDownLatch(1);
         CountDownLatch doneSignal = new CountDownLatch(samples);
 
-        AtomicInteger successCount = new AtomicInteger(0);
-        AtomicInteger failCount = new AtomicInteger(0);
-        AtomicInteger totalRetries = new AtomicInteger(0);
-
-        long startTime = System.currentTimeMillis();
-
         for (int i = 1; i <= samples; i++) {
             final int id = i;
             new Thread(() -> {
+                long inicioMuestra = System.currentTimeMillis();
                 try {
                     startSignal.await();
-                    if (stopRequested) return;
 
-                    ejecutarMuestraRaw(id, maxRetries, successCount, failCount, totalRetries);
+                    if (stopRequested) {
+                        doneSignal.countDown();
+                        return;
+                    }
 
+                    try (Connection conn = DriverManager.getConnection(
+                            DatabaseConfig.getUrl(),
+                            DatabaseConfig.getUser(),
+                            DatabaseConfig.getPassword())) {
+
+                        Statement stmt = conn.createStatement();
+                        stmt.execute(DatabaseConfig.getQuery());
+
+                        long tiempoRespuesta = System.currentTimeMillis() - inicioMuestra;
+                        LogManager.log(id, "RAW", "EXITO", tiempoRespuesta);
+
+                    } catch (Exception e) {
+                        long tiempoFallo = System.currentTimeMillis() - inicioMuestra;
+                        LogManager.log(id, "RAW", "FALLO", tiempoFallo);
+                    } finally {
+                        doneSignal.countDown();
+                    }
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
-                } finally {
                     doneSignal.countDown();
                 }
             }).start();
@@ -132,52 +147,16 @@ public class SimulationEngine {
         new Thread(() -> {
             try {
                 doneSignal.await();
-                long duration = System.currentTimeMillis() - startTime;
+                long totalTime = System.currentTimeMillis() - startTime;
+                double promedio = (double) totalTime / samples;
 
-                double avgRetries = totalRetries.get() / (double) samples;
-                String reporte = String.format("FIN RAW | Tiempo: %d ms | Éxitos: %d | Fallos: %d | Promedio Reintentos: %.2f",
-                        duration, successCount.get(), failCount.get(), avgRetries);
-
-                gui.appendToGui("--------------------------------------------------");
-                gui.appendToGui(reporte);
-                gui.appendToGui("--------------------------------------------------");
-                LogManager.log(reporte);
-
+                gui.appendToGui("\n--- RESULTADOS RAW ---");
+                gui.appendToGui("Tiempo Total: " + totalTime + " ms");
+                gui.appendToGui("Promedio/Muestra: " + String.format("%.2f", promedio) + " ms");
                 gui.enableButtons(true);
-
             } catch (InterruptedException e) {
-                e.printStackTrace();
+                gui.enableButtons(true);
             }
         }).start();
-    }
-
-    private void ejecutarMuestraRaw(int id, int maxRetries, AtomicInteger successCount, AtomicInteger failCount, AtomicInteger totalRetries) {
-        int attempt = 0;
-        boolean success = false;
-        String status = "FALLIDA";
-
-        while (attempt <= maxRetries && !success && !stopRequested) {
-            try (Connection conn = DriverManager.getConnection(
-                    DatabaseConfig.getUrl(), DatabaseConfig.getUser(), DatabaseConfig.getPass());
-                 Statement stmt = conn.createStatement()) {
-
-                stmt.execute(DatabaseConfig.getQuery());
-                success = true;
-                status = "EXITOSA";
-
-            } catch (Exception e) {
-                attempt++;
-                totalRetries.incrementAndGet();
-                try { Thread.sleep(50); } catch (InterruptedException ex) {}
-            }
-        }
-
-        if (success) {
-            successCount.incrementAndGet();
-        } else {
-            failCount.incrementAndGet();
-        }
-
-        LogManager.log(String.format("Muestra ID: %03d | Estado: %s | Reintentos: %d", id, status, attempt));
     }
 }

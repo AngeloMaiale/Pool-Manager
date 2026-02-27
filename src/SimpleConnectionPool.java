@@ -3,9 +3,9 @@ import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.TimeUnit;
 
 public class SimpleConnectionPool {
-    // Cola que almacenará las conexiones disponibles
     private final BlockingQueue<Connection> pool;
     private final int poolSize;
 
@@ -15,11 +15,10 @@ public class SimpleConnectionPool {
         initializePool();
     }
 
-    // Crea las conexiones iniciales (Requisito: pool limitado)
     private void initializePool() throws SQLException {
         for (int i = 0; i < poolSize; i++) {
             Connection conn = createNewConnection();
-            pool.offer(conn); // Agrega la conexión a la cola
+            pool.offer(conn);
         }
         System.out.println("Pool inicializado con " + poolSize + " conexiones.");
     }
@@ -28,26 +27,31 @@ public class SimpleConnectionPool {
         return DriverManager.getConnection(
                 DatabaseConfig.getUrl(),
                 DatabaseConfig.getUser(),
-                DatabaseConfig.getPass()
+                DatabaseConfig.getPassword()
         );
     }
 
-    // Método para que un hilo "pida" una conexión
     public Connection getConnection() throws InterruptedException {
-        // take() es clave: si la cola está vacía, el hilo espera (bloqueo) 
-        // hasta que otro hilo devuelva una conexión.
-        return pool.take();
+        long startWait = System.currentTimeMillis();
+        Connection conn = pool.poll(3, TimeUnit.SECONDS);
+        long waitTime = System.currentTimeMillis() - startWait;
+        if (conn == null) {
+            System.err.println("[ADVERTENCIA] Pool vacío. Hilos esperando demasiado.");
+            throw new InterruptedException("Tiempo de espera de pool agotado");
+        }
+        if (waitTime > 1500) {
+            System.out.println("[OPTIMIZACIÓN] Sugerencia: El pool está saturado. Aumenta 'pool.size' en config.properties.");
+        }
+
+        return conn;
     }
 
-    // Método para que un hilo "devuelva" la conexión (Reciclaje)
     public void releaseConnection(Connection conn) {
         if (conn != null) {
-            // Intentamos devolverla a la cola para que otro hilo la use
             pool.offer(conn);
         }
     }
 
-    // Cierra todas las conexiones al final de la simulación
     public void shutdown() {
         for (Connection conn : pool) {
             try {

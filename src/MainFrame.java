@@ -68,7 +68,7 @@ public class MainFrame extends JFrame {
             try (Connection conn = DriverManager.getConnection(
                     DatabaseConfig.getUrl(),
                     DatabaseConfig.getUser(),
-                    DatabaseConfig.getPass())) {
+                    DatabaseConfig.getPassword())) {
 
                 if (conn != null) {
                     appendToGui("¡ÉXITO! Conexión establecida correctamente.");
@@ -83,6 +83,7 @@ public class MainFrame extends JFrame {
     public void enableButtons(boolean enable) {
         btnTestConn.setEnabled(enable);
         btnRaw.setEnabled(enable);
+        btnPooled.setEnabled(enable);
         btnStop.setEnabled(!enable);
     }
 
