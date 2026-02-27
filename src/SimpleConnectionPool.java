@@ -39,7 +39,7 @@ public class SimpleConnectionPool {
             System.err.println("[ADVERTENCIA] Pool vacío. Hilos esperando demasiado.");
             throw new InterruptedException("Tiempo de espera de pool agotado");
         }
-        if (waitTime > 1500) {
+        if (waitTime > 4000) {
             System.out.println("[OPTIMIZACIÓN] Sugerencia: El pool está saturado. Aumenta 'pool.size' en config.properties.");
         }
 

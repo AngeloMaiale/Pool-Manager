@@ -25,6 +25,9 @@ public class SimulationEngine {
         int poolSize = DatabaseConfig.getPoolSize();
         long startTime = System.currentTimeMillis();
 
+        AtomicInteger exitos = new AtomicInteger(0);
+        AtomicInteger fallos = new AtomicInteger(0);
+
         gui.appendToGui("Iniciando Simulación POOLED (Muestras: " + samples + ", Pool: " + poolSize + ")...");
         LogManager.logHeader("INICIO SIMULACIÓN POOLED");
 
@@ -41,6 +44,7 @@ public class SimulationEngine {
                         startSignal.await();
 
                         if (stopRequested) {
+                            fallos.incrementAndGet();
                             doneSignal.countDown();
                             return;
                         }
@@ -48,15 +52,16 @@ public class SimulationEngine {
                         Connection conn = null;
                         try {
                             conn = pool.getConnection();
-
                             Statement stmt = conn.createStatement();
                             stmt.execute(DatabaseConfig.getQuery());
 
                             long tiempoRespuesta = System.currentTimeMillis() - inicioMuestra;
+                            exitos.incrementAndGet();
                             LogManager.log(id, "POOLED", "EXITO", tiempoRespuesta);
 
                         } catch (Exception e) {
                             long tiempoFallo = System.currentTimeMillis() - inicioMuestra;
+                            fallos.incrementAndGet();
                             LogManager.log(id, "POOLED", "FALLO", tiempoFallo);
                         } finally {
                             if (conn != null) pool.releaseConnection(conn);
@@ -75,12 +80,13 @@ public class SimulationEngine {
                 try {
                     doneSignal.await();
                     long totalTime = System.currentTimeMillis() - startTime;
-
-                    double promedio = (double) totalTime / samples;
+                    double pctExito = (exitos.get() * 100.0) / samples;
+                    double pctFallo = (fallos.get() * 100.0) / samples;
 
                     gui.appendToGui("\n--- RESULTADOS POOLED ---");
                     gui.appendToGui("Tiempo Total: " + totalTime + " ms");
-                    gui.appendToGui("Promedio/Muestra: " + String.format("%.2f", promedio) + " ms");
+                    gui.appendToGui("Éxitos: " + exitos.get() + " (" + String.format("%.2f", pctExito) + "%)");
+                    gui.appendToGui("Fallos: " + fallos.get() + " (" + String.format("%.2f", pctFallo) + "%)");
                     gui.enableButtons(true);
 
                     pool.shutdown();
@@ -100,6 +106,9 @@ public class SimulationEngine {
         int samples = DatabaseConfig.getSamples();
         long startTime = System.currentTimeMillis();
 
+        AtomicInteger exitos = new AtomicInteger(0);
+        AtomicInteger fallos = new AtomicInteger(0);
+
         gui.appendToGui("Iniciando Simulación RAW (Muestras: " + samples + ")...");
         LogManager.logHeader("INICIO SIMULACIÓN RAW");
 
@@ -114,6 +123,7 @@ public class SimulationEngine {
                     startSignal.await();
 
                     if (stopRequested) {
+                        fallos.incrementAndGet();
                         doneSignal.countDown();
                         return;
                     }
@@ -127,10 +137,12 @@ public class SimulationEngine {
                         stmt.execute(DatabaseConfig.getQuery());
 
                         long tiempoRespuesta = System.currentTimeMillis() - inicioMuestra;
+                        exitos.incrementAndGet();
                         LogManager.log(id, "RAW", "EXITO", tiempoRespuesta);
 
                     } catch (Exception e) {
                         long tiempoFallo = System.currentTimeMillis() - inicioMuestra;
+                        fallos.incrementAndGet();
                         LogManager.log(id, "RAW", "FALLO", tiempoFallo);
                     } finally {
                         doneSignal.countDown();
@@ -148,11 +160,14 @@ public class SimulationEngine {
             try {
                 doneSignal.await();
                 long totalTime = System.currentTimeMillis() - startTime;
-                double promedio = (double) totalTime / samples;
+
+                double pctExito = (exitos.get() * 100.0) / samples;
+                double pctFallo = (fallos.get() * 100.0) / samples;
 
                 gui.appendToGui("\n--- RESULTADOS RAW ---");
                 gui.appendToGui("Tiempo Total: " + totalTime + " ms");
-                gui.appendToGui("Promedio/Muestra: " + String.format("%.2f", promedio) + " ms");
+                gui.appendToGui("Éxitos: " + exitos.get() + " (" + String.format("%.2f", pctExito) + "%)");
+                gui.appendToGui("Fallos: " + fallos.get() + " (" + String.format("%.2f", pctFallo) + "%)");
                 gui.enableButtons(true);
             } catch (InterruptedException e) {
                 gui.enableButtons(true);

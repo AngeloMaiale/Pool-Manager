@@ -1,8 +1,8 @@
 import javax.swing.*;
 import java.awt.*;
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.SQLException;
+import java.awt.event.ActionListener;
+import java.awt.Insets;
+
 
 public class MainFrame extends JFrame {
     private JTextArea logArea;
@@ -10,91 +10,94 @@ public class MainFrame extends JFrame {
     private SimulationEngine engine;
 
     public MainFrame() {
-        setTitle("Simulador de Conexiones a BD - Adelanto");
-        setSize(700, 500);
+        setTitle("Simulador de Conexiones a BD - Entrega Final");
+        setSize(950, 700);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLayout(new BorderLayout());
+        setLocationRelativeTo(null);
 
         engine = new SimulationEngine(this);
 
+        Font fuenteConsola = new Font("Monospaced", Font.BOLD, 16);
+        Font fuenteBotones = new Font("Arial", Font.BOLD, 14);
+
+        logArea = new JTextArea();
+        logArea.setEditable(false);
+        logArea.setFont(fuenteConsola);
+        logArea.setBackground(new Color(20, 20, 20));
+        logArea.setForeground(new Color(0, 255, 100));
+
+        JScrollPane scrollPane = new JScrollPane(logArea);
+        add(scrollPane, BorderLayout.CENTER);
+
         JPanel panelButtons = new JPanel();
-        panelButtons.setLayout(new FlowLayout());
+        panelButtons.setBackground(new Color(240, 240, 240));
+        panelButtons.setLayout(new FlowLayout(FlowLayout.CENTER, 15, 15));
 
-        btnTestConn = new JButton("Verificar DB");
-        btnTestConn.setBackground(new Color(200, 255, 200));
-
+        btnTestConn = new JButton("Probar Conexión");
         btnRaw = new JButton("Simulación RAW");
-
         btnPooled = new JButton("Simulación POOLED");
-        btnPooled.setEnabled(true);
-        btnPooled.addActionListener(e -> {
-            enableButtons(false);
-            engine.runPooledSimulation();
-        });
+        btnStop = new JButton("STOP");
 
-        btnStop = new JButton("Freno de Emergencia");
-        btnStop.setBackground(Color.RED);
+
+        configurarBoton(btnTestConn, fuenteBotones, new Color(220, 220, 220));
+        configurarBoton(btnRaw, fuenteBotones, new Color(255, 200, 200));
+        configurarBoton(btnPooled, fuenteBotones, new Color(200, 255, 200));
+        configurarBoton(btnStop, fuenteBotones, new Color(255, 100, 100));
         btnStop.setForeground(Color.WHITE);
-        btnStop.setEnabled(false);
 
         panelButtons.add(btnTestConn);
         panelButtons.add(btnRaw);
         panelButtons.add(btnPooled);
         panelButtons.add(btnStop);
-        logArea = new JTextArea();
-        logArea.setEditable(false);
-        logArea.setFont(new Font("Monospaced", Font.PLAIN, 13));
-        JScrollPane scroll = new JScrollPane(logArea);
-        scroll.setBorder(BorderFactory.createTitledBorder("Log de Ejecución en Tiempo Real"));
 
-        add(panelButtons, BorderLayout.NORTH);
-        add(scroll, BorderLayout.CENTER);
+        add(panelButtons, BorderLayout.SOUTH);
 
-        btnTestConn.addActionListener(e -> testSingleConnection());
+        btnTestConn.addActionListener(e -> {
+            appendToGui("Verificando conexión con PostgreSQL...");
+        });
 
         btnRaw.addActionListener(e -> {
             enableButtons(false);
-            engine.runRawSimulation();
+            new Thread(() -> engine.runRawSimulation()).start();
+        });
+
+        btnPooled.addActionListener(e -> {
+            enableButtons(false);
+            new Thread(() -> engine.runPooledSimulation()).start();
         });
 
         btnStop.addActionListener(e -> engine.stopSimulation());
-
-        appendToGui("Sistema inicializado. Parámetros cargados desde config.properties");
     }
 
-    private void testSingleConnection() {
-        new Thread(() -> {
-            appendToGui("Probando conexión a: " + DatabaseConfig.getUrl() + " ...");
-            try (Connection conn = DriverManager.getConnection(
-                    DatabaseConfig.getUrl(),
-                    DatabaseConfig.getUser(),
-                    DatabaseConfig.getPassword())) {
-
-                if (conn != null) {
-                    appendToGui("¡ÉXITO! Conexión establecida correctamente.");
-                    JOptionPane.showMessageDialog(this, "Conexión Exitosa a la DB");
-                }
-            } catch (SQLException ex) {
-                appendToGui("ERROR de conexión: " + ex.getMessage());
-            }
-        }).start();
+    private void configurarBoton(JButton btn, Font f, Color c) {
+        btn.setFont(f);
+        btn.setBackground(c);
+        btn.setFocusPainted(false);
+        btn.setCursor(new Cursor(Cursor.HAND_CURSOR));
     }
 
-    public void enableButtons(boolean enable) {
-        btnTestConn.setEnabled(enable);
-        btnRaw.setEnabled(enable);
-        btnPooled.setEnabled(enable);
-        btnStop.setEnabled(!enable);
-    }
-
-    public void appendToGui(String text) {
+    public void appendToGui(String message) {
         SwingUtilities.invokeLater(() -> {
-            logArea.append(text + "\n");
+            logArea.append(message + "\n");
             logArea.setCaretPosition(logArea.getDocument().getLength());
         });
     }
 
+    public void enableButtons(boolean enabled) {
+        SwingUtilities.invokeLater(() -> {
+            btnRaw.setEnabled(enabled);
+            btnPooled.setEnabled(enabled);
+            btnTestConn.setEnabled(enabled);
+        });
+    }
+
     public static void main(String[] args) {
-        SwingUtilities.invokeLater(() -> new MainFrame().setVisible(true));
+        try { UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName()); }
+        catch (Exception e) {}
+
+        SwingUtilities.invokeLater(() -> {
+            new MainFrame().setVisible(true);
+        });
     }
 }
